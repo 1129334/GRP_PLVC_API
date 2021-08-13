@@ -1,5 +1,6 @@
 ﻿using Newtonsoft.Json;
 using OfficeOpenXml;
+using RestSharp;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
@@ -7,6 +8,8 @@ using System.Data;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
+using System.Text;
 using System.Web;
 
 namespace GroupPLVCAPI.Models
@@ -32,7 +35,7 @@ namespace GroupPLVCAPI.Models
             catch (Exception ex)
             {
                 objLookupDetailsReponse.isSuccess = false;
-                objLookupDetailsReponse.ErrorMessage = ex.ToString();
+                objLookupDetailsReponse.ErrorMessage = ex.Message;
 
                 objDal.SaveExceptionLog("lookUpCode", lookUpCode, "BAL.FetchLookupDetails", 1, ex.ToString(), "API_GRP_PLVC", String.Empty);
             }
@@ -144,12 +147,27 @@ namespace GroupPLVCAPI.Models
             catch (Exception ex)
             {
                 objMISDataDetailResponse.isSuccess = false;
-                objMISDataDetailResponse.ErrorMessage = ex.ToString();
+                objMISDataDetailResponse.ErrorMessage = ex.Message;
 
-                objDal.SaveExceptionLog("userId", userId, "BAL.FetchUserRecording", 1, ex.ToString(), "API_GRP_PLVC", userId);
+                if (!String.IsNullOrEmpty(userId)) { objDal.SaveExceptionLog("userId", userId, "BAL.FetchUserRecording", 1, ex.ToString(), "API_GRP_PLVC", userId); }
             }
 
             return objMISDataDetailResponse;
+        }
+
+        public bool ValidateAgentToken(string agentToken)
+        {
+            //3.Check UserToken is valid
+            bool result = true;
+
+            LoginStatusResponse objLoginStatusResponse = FetchLoginStatusDetails(agentToken);
+
+            if (objLoginStatusResponse.LoginStatus.isLoggedIn == false || objLoginStatusResponse.LoginStatus.TokenExpiryDt < DateTime.Now)
+            {
+                result = false;
+            }
+
+            return result;
         }
 
         #region Record App
@@ -185,7 +203,7 @@ namespace GroupPLVCAPI.Models
             catch (Exception ex)
             {
                 objLanguageScriptMasterResponse.isSuccess = false;
-                objLanguageScriptMasterResponse.ErrorMessage = ex.ToString();
+                objLanguageScriptMasterResponse.ErrorMessage = ex.Message;
 
                 objDal.SaveExceptionLog("languageCode", languageCode, "BAL.FetchLanguageScriptMaster", 1, ex.ToString(), "API_GRP_PLVC", String.Empty);
             }
@@ -221,7 +239,7 @@ namespace GroupPLVCAPI.Models
             catch (Exception ex)
             {
                 objLeadDetailsReponse.isSuccess = false;
-                objLeadDetailsReponse.ErrorMessage = ex.ToString();
+                objLeadDetailsReponse.ErrorMessage = ex.Message;
 
                 objDal.SaveExceptionLog("LeadID", Convert.ToString(leadDetails.LeadID), "BAL.SaveLeadDetails", 1, ex.ToString(), "API_GRP_PLVC", leadDetails.CreaedBy);
             }
@@ -236,6 +254,25 @@ namespace GroupPLVCAPI.Models
 
             try
             {
+                //5.Check for 5 second video + Blink Detection is successfull
+                if (blobDetailsRequest.DataKey == 3)
+                {
+                    DataTable dtBlinkDetection = objDal.FetchBlinkDetetcionStatusDetails(blobDetailsRequest.LeadID);
+
+                    if (dtBlinkDetection != null && dtBlinkDetection.Rows.Count > 0)
+                    {
+                        string errorCode = Convert.ToString(dtBlinkDetection.Rows[0]["BlinkDetect_Status"]);
+
+                        if (errorCode.ToUpper() == "TRUE")
+                        {
+                            objBlobDetailsResponse.errorcode = "1";
+                            objBlobDetailsResponse.errordescription = "Liveness Detection is not complete for this case.";
+
+                            return objBlobDetailsResponse;
+                        }
+                    }
+                }
+
                 //Save File in Shared Folder
                 string vkycpdflocation = ConfigurationManager.AppSettings["SharedFolderlocation"].ToString();
                 vkycpdflocation = vkycpdflocation + blobDetailsRequest.LeadID + "\\";
@@ -264,7 +301,7 @@ namespace GroupPLVCAPI.Models
                 }
 
                 try
-                {                    
+                {
                     //Update DB Entries
                     objDal.SaveBlobDetails(blobDetailsRequest);
 
@@ -275,7 +312,7 @@ namespace GroupPLVCAPI.Models
                 catch (Exception ex)
                 {
                     objBlobDetailsResponse.errorcode = "1";
-                    objBlobDetailsResponse.errordescription = ex.ToString();
+                    objBlobDetailsResponse.errordescription = ex.Message;
                     objBlobDetailsResponse.blobURL = bloburl;
 
                     objDal.SaveExceptionLog("LeadID", Convert.ToString(blobDetailsRequest.LeadID), "BAL.BlobDetailsInsert_Table_Insert", 1, ex.ToString(), "API_GRP_PLVC", blobDetailsRequest.CreatedBy);
@@ -284,7 +321,7 @@ namespace GroupPLVCAPI.Models
             catch (Exception ex)
             {
                 objBlobDetailsResponse.errorcode = "1";
-                objBlobDetailsResponse.errordescription = ex.ToString();
+                objBlobDetailsResponse.errordescription = ex.Message;
 
                 objDal.SaveExceptionLog("LeadID", Convert.ToString(blobDetailsRequest.LeadID), "BAL.BlobDetailsInsert_File_Save", 1, ex.ToString(), "API_GRP_PLVC", blobDetailsRequest.CreatedBy);
             }
@@ -338,7 +375,7 @@ namespace GroupPLVCAPI.Models
 
             return blobStoragePutResponse.filePath;
         }
-       
+
         public PLVCTimingDetailResponse FetchPLVCTimingDetails(int leadId)
         {
             PLVCTimingDetailResponse objPLVCTimingDetailResponse = new PLVCTimingDetailResponse();
@@ -356,12 +393,205 @@ namespace GroupPLVCAPI.Models
             catch (Exception ex)
             {
                 objPLVCTimingDetailResponse.isSuccess = false;
-                objPLVCTimingDetailResponse.ErrorMessage = ex.ToString();
+                objPLVCTimingDetailResponse.ErrorMessage = ex.Message;
 
                 objDal.SaveExceptionLog("leadId", Convert.ToString(leadId), "BAL.FetchPLVCTimingDetails", 1, ex.ToString(), "API_GRP_PLVC", string.Empty);
             }
 
             return objPLVCTimingDetailResponse;
+        }
+
+        public LoginStatusResponse SaveLoginStatusDetails(LoginStatus loginStatus)
+        {
+            LoginStatusResponse objLoginStatusResponse = new LoginStatusResponse();
+            List<LoginStatus> lstLoginStatus = new List<LoginStatus>();
+
+            try
+            {
+                DataTable dtInsert = objDal.SaveLoginStatusDetails(loginStatus);
+                Utility.ConvertDataTable(dtInsert, ref lstLoginStatus);
+
+                if (dtInsert != null && dtInsert.Rows.Count > 0)
+                {
+                    objLoginStatusResponse.isSuccess = true;
+                    objLoginStatusResponse.ErrorMessage = String.Empty;
+
+                    objLoginStatusResponse.LoginStatus = lstLoginStatus.FirstOrDefault();
+                }
+                else
+                {
+                    objLoginStatusResponse.isSuccess = false;
+                    objLoginStatusResponse.ErrorMessage = "T_LoginStatus Table Insert Failed";
+                }
+            }
+            catch (Exception ex)
+            {
+                objLoginStatusResponse.isSuccess = false;
+                objLoginStatusResponse.ErrorMessage = ex.Message;
+
+                objDal.SaveExceptionLog("loginStatus", Convert.ToString(loginStatus.isLoggedIn), "BAL.SaveLoginStatusDetails", 1, ex.ToString(), "API_GRP_PLVC", loginStatus.AgentToken);
+            }
+
+            return objLoginStatusResponse;
+        }
+
+
+        public LoginStatusResponse FetchLoginStatusDetails(String agentToken)
+        {
+            LoginStatusResponse objLoginStatusResponse = new LoginStatusResponse();
+            List<LoginStatus> lstLoginStatus = new List<LoginStatus>();
+
+            try
+            {
+                DataTable dtInsert = objDal.FetchLoginStatusDetails(agentToken);
+                Utility.ConvertDataTable(dtInsert, ref lstLoginStatus);
+
+                if (dtInsert != null && dtInsert.Rows.Count > 0)
+                {
+                    objLoginStatusResponse.isSuccess = true;
+                    objLoginStatusResponse.ErrorMessage = String.Empty;
+
+                    objLoginStatusResponse.LoginStatus = lstLoginStatus.FirstOrDefault();
+                }
+                else
+                {
+                    objLoginStatusResponse.isSuccess = false;
+                    objLoginStatusResponse.ErrorMessage = "T_LoginStatus Table Fetch Failed";
+                }
+            }
+            catch (Exception ex)
+            {
+                objLoginStatusResponse.isSuccess = false;
+                objLoginStatusResponse.ErrorMessage = ex.Message;
+
+                objDal.SaveExceptionLog("AgentToken", String.Empty, "BAL.FetchLoginStatusDetails", 1, ex.ToString(), "API_GRP_PLVC", agentToken);
+            }
+
+            return objLoginStatusResponse;
+        }
+
+        public GoogleGeoLocationResponse GetGeoLocation(string latlng)
+        {
+            GoogleGeoLocationResponse googleGeoLocationResponse = new GoogleGeoLocationResponse();
+
+            string googleMapUrl = ConfigurationManager.AppSettings["googleMapUrl"].ToString();
+            string googleMapUrlkey = ConfigurationManager.AppSettings["googleMapUrlKey"].ToString();
+
+            string URL = googleMapUrl + "latlng=" + latlng + "&key=" + googleMapUrlkey;
+
+            try
+            {
+                WebRequest request = HttpWebRequest.Create(URL);
+
+                WebResponse response = request.GetResponse();
+
+                StreamReader reader = new StreamReader(response.GetResponseStream());
+
+                string responseText = reader.ReadToEnd();
+
+                googleGeoLocationResponse = JsonConvert.DeserializeObject<GoogleGeoLocationResponse>(responseText);
+            }
+            catch (Exception ex)
+            {
+                objDal.SaveExceptionLog("latlng", Convert.ToString(latlng), "BAL.GetGeoLocation", 1, ex.ToString(), "API_GRP_PLVC", String.Empty);
+            }
+
+            return googleGeoLocationResponse;
+        }
+
+        public RcrdApp_Login_Response RcrdLogin(RcrdApp_Login_Request rcrdApp_Login_Request)
+        {
+            RcrdApp_Login_Response objRcrdApp_Login_Response = new RcrdApp_Login_Response();
+            LoginStatus objLoginStatus = new LoginStatus();
+
+            var client = new RestClient(ConfigurationManager.AppSettings["Rcrd_Login_API_Url"].ToString());
+            string jsonBody = JsonConvert.SerializeObject(rcrdApp_Login_Request);
+
+            try
+            {
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls12 | SecurityProtocolType.Ssl3;
+
+                client.Timeout = -1;
+                var request = new RestRequest(Method.POST);
+                request.AddHeader("Content-Type", "application/json");
+                request.AddParameter("application/json", jsonBody, ParameterType.RequestBody);
+                IRestResponse response = client.Execute(request);
+
+                if (response != null)
+                {
+                    objRcrdApp_Login_Response = JsonConvert.DeserializeObject<RcrdApp_Login_Response>(response.Content);
+
+                    if (objRcrdApp_Login_Response.IsSuccess)
+                    {
+                        //1.Save Login Status Details in Db                       
+                        objLoginStatus.AgentCode = objRcrdApp_Login_Response.ResponseObject.AgentCode;
+                        objLoginStatus.AgentToken = Guid.NewGuid().ToString().Replace("-", "");
+                        objLoginStatus.TokenExpiryDt = DateTime.Now.AddDays(1);
+                        objLoginStatus.isLoggedIn = true;
+
+                        objRcrdApp_Login_Response.LoginStatus = objLoginStatus;
+
+                        objDal.SaveLoginStatusDetails(objLoginStatus);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                objRcrdApp_Login_Response.IsSuccess = false;
+                objRcrdApp_Login_Response.ErrorMessage = ex.Message;
+
+                objDal.SaveExceptionLog("AgentCode", Convert.ToString(rcrdApp_Login_Request.AgentCode), "BAL.RcrdLogin", 1, ex.ToString(), "API_GRP_PLVC", String.Empty);
+            }
+
+            return objRcrdApp_Login_Response;
+        }
+
+        public BlinkDetectionResponse BlinkDetection(HttpPostedFile postedFile, int leadID)
+        {
+            DataTable dataTable = new DataTable();
+            BlinkDetectionResponse blinkDetectionResponse = new BlinkDetectionResponse();
+
+            try
+            {
+                string binkDetectionAPI = ConfigurationManager.AppSettings["BlinkDetectionAPI"].ToString();
+                string _classificationKey = ConfigurationManager.AppSettings["ClassificationKey"].ToString();
+
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls12 | SecurityProtocolType.Ssl3;
+
+                byte[] fileData = null;
+                using (var binaryReader = new BinaryReader(postedFile.InputStream))
+                {
+                    fileData = binaryReader.ReadBytes(postedFile.ContentLength);
+                }
+                ServicePointManager.Expect100Continue = true;
+
+                string contentType = "multipart/form-data";
+                string filename = "1.jpeg";
+                var webClient = new WebClient();
+                string boundary = "------------------------" + DateTime.Now.Ticks.ToString("x");
+                webClient.Headers.Add("Content-Type", "multipart/form-data; boundary=" + boundary);
+                var fileDatas = webClient.Encoding.GetString(fileData);
+                var package = string.Format("--{0}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{1}\"\r\nContent-Type: {2}\r\n\r\n{3}\r\n--{0}--\r\n", boundary, filename, contentType, fileDatas);
+
+                var nfile = webClient.Encoding.GetBytes(package);
+
+                byte[] respbyte = webClient.UploadData(binkDetectionAPI, "POST", nfile);
+
+                string resp = Encoding.ASCII.GetString(respbyte);
+
+                blinkDetectionResponse = JsonConvert.DeserializeObject<BlinkDetectionResponse>(resp);
+
+                //4.Save Reponse in Db
+                objDal.SaveBlinkDetectionStatus(leadID, blinkDetectionResponse.errorcode == "1" ? true : false, blinkDetectionResponse.errormessage);
+            }
+            catch (Exception ex)
+            {
+                blinkDetectionResponse.errorcode = "1";
+                blinkDetectionResponse.errormessage = "Exception - " + ex.Message;
+
+                objDal.SaveExceptionLog("FileName", Convert.ToString(postedFile.FileName), "BAL.BlinkDetection", 1, ex.ToString(), "API_GRP_PLVC", String.Empty);
+            }
+            return blinkDetectionResponse;
         }
 
         #endregion
@@ -372,14 +602,15 @@ namespace GroupPLVCAPI.Models
         {
             BlobDetailsResponse objBlobDetailsResponse = new BlobDetailsResponse();
             List<BlobDetailsRequest> lstBlobDetailsRequest = new List<BlobDetailsRequest>();
+            List<QuestionVideoMapping> questionVideoMappings = new List<QuestionVideoMapping>();
 
             try
             {
                 DataTable dtVideoDetails = objDal.FetchBlobVideoDetails(leadId, 2);
 
                 if (dtVideoDetails != null && dtVideoDetails.Rows.Count > 0)
-                {                    
-                    Utility.ConvertDataTable(dtVideoDetails, ref lstBlobDetailsRequest);
+                {
+                    //Utility.ConvertDataTable(dtVideoDetails, ref lstBlobDetailsRequest);
 
                     //string blobURL = BlobVideoStorageDownload(lstBlobDetailsRequest.FirstOrDefault());
 
@@ -404,11 +635,21 @@ namespace GroupPLVCAPI.Models
                     //    objBlobDetailsResponse.blobURL = virtualPath;
                     //}
 
-                    string virtualPath = ConfigurationManager.AppSettings["VirtualFolderlocation"] + "//" + lstBlobDetailsRequest.FirstOrDefault().LeadID + "//" + lstBlobDetailsRequest.FirstOrDefault().FileName;
+                    foreach (DataRow dtRow in dtVideoDetails.Rows)
+                    {
+                        QuestionVideoMapping objQuestionVideoMapping = new QuestionVideoMapping();
+                        objQuestionVideoMapping.VirtualPath = ConfigurationManager.AppSettings["VirtualFolderlocation"] + "//" + Convert.ToString(dtRow["LeadID"]) + "//" + Convert.ToString(dtRow["FileName"]);
+                        objQuestionVideoMapping.QuestionID = Convert.ToInt32(dtRow["QuestionID"]);
+
+                        objQuestionVideoMapping.CreatedDt = Convert.ToDateTime(dtRow["CreatedDate"]);
+                        objQuestionVideoMapping.ModifiedDt = (!String.IsNullOrEmpty(Convert.ToString(dtRow["ModifiedDate"])) ? Convert.ToDateTime(dtRow["ModifiedDate"]) : (DateTime?)null);
+
+                        questionVideoMappings.Add(objQuestionVideoMapping);
+                    }
 
                     objBlobDetailsResponse.errorcode = "0";
                     objBlobDetailsResponse.errordescription = String.Empty;
-                    objBlobDetailsResponse.blobURL = virtualPath;
+                    objBlobDetailsResponse.lstQuestionVideoMapping = questionVideoMappings;
                 }
                 else
                 {
@@ -416,14 +657,14 @@ namespace GroupPLVCAPI.Models
                     objBlobDetailsResponse.errordescription = "No row found in T_PlvcBlobDetails";
                 }
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 objBlobDetailsResponse.errorcode = "1";
-                objBlobDetailsResponse.errordescription = ex.ToString();
+                objBlobDetailsResponse.errordescription = ex.Message;
 
                 objDal.SaveExceptionLog("LeadID", Convert.ToString(leadId), "BAL.SaveRecordingDetails", 1, ex.ToString(), "API_GRP_PLVC", String.Empty);
             }
-                    
+
             return objBlobDetailsResponse;
         }
 
@@ -450,7 +691,7 @@ namespace GroupPLVCAPI.Models
                         applicationNumber = blobDetailsRequest.LeadID.ToString(),
                         containName = blobDetailsRequest.Container,
                         subFolder = blobDetailsRequest.Subfolder,
-                        fileName = blobDetailsRequest.FileName                        
+                        fileName = blobDetailsRequest.FileName
                     });
 
                     streamWriter.Write(inputJson);
@@ -511,18 +752,18 @@ namespace GroupPLVCAPI.Models
             catch (Exception ex)
             {
                 objRecordingDetailsResponse.isSuccess = true;
-                objRecordingDetailsResponse.ErrorMessage = ex.ToString();
+                objRecordingDetailsResponse.ErrorMessage = ex.Message;
 
                 objDal.SaveExceptionLog("LeadID", Convert.ToString(recordingDetails.LeadID), "BAL.SaveRecordingDetails", 1, ex.ToString(), "API_GRP_PLVC", recordingDetails.CreatedBy);
             }
 
             return objRecordingDetailsResponse;
         }
-        
+
         public PolicyIssuanceRecordsResponse SavePolicyIssuanceRecords(string fileName)
         {
             PolicyIssuanceRecordsResponse objPolicyIssuanceRecordsResponse = new PolicyIssuanceRecordsResponse();
-        
+
             try
             {
                 //Convert to DataTable
@@ -531,7 +772,7 @@ namespace GroupPLVCAPI.Models
                 //Insert DataTable in Db
                 DataTable dtInsertRcrds = objDal.SavePolicyIssuanceRecords(dtRecords);
 
-                if(dtInsertRcrds != null && dtInsertRcrds.Rows.Count > 0)
+                if (dtInsertRcrds != null && dtInsertRcrds.Rows.Count > 0)
                 {
                     objPolicyIssuanceRecordsResponse.isSuccess = true;
                     objPolicyIssuanceRecordsResponse.ErrorMessage = String.Empty;
@@ -547,12 +788,12 @@ namespace GroupPLVCAPI.Models
             catch (Exception ex)
             {
                 objPolicyIssuanceRecordsResponse.isSuccess = false;
-                objPolicyIssuanceRecordsResponse.ErrorMessage = ex.ToString();
+                objPolicyIssuanceRecordsResponse.ErrorMessage = ex.Message;
             }
-          
+
             return objPolicyIssuanceRecordsResponse;
         }
-       
+
         public DataTable GetDataTableFromExcel(string path, bool hasHeader = true)
         {
             using (var pck = new OfficeOpenXml.ExcelPackage())
@@ -608,7 +849,7 @@ namespace GroupPLVCAPI.Models
             catch (Exception ex)
             {
                 objDownloadReportResponse.isSuccess = false;
-                objDownloadReportResponse.ErrorMessage = ex.ToString();
+                objDownloadReportResponse.ErrorMessage = ex.Message;
 
                 objDal.SaveExceptionLog("userId", userId, "BAL.CreateExcelReport", 1, ex.ToString(), "API_GRP_PLVC", userId);
             }
@@ -616,6 +857,121 @@ namespace GroupPLVCAPI.Models
             return objDownloadReportResponse;
         }
 
+        public RcrdApp_Login_Response ConsoleLogin(string username, string password, string sessionId, string captchaText, string channelType)
+        {
+            RcrdApp_Login_Response objRcrdApp_Login_Response = new RcrdApp_Login_Response();
+            LoginStatus objLoginStatus = new LoginStatus();
+
+            try
+            {
+                //CAPTCHA VALDIATION
+                if (Base64Decode(sessionId) == captchaText)
+                {
+                    //2.Console Login Implementation
+                    DataTable dtRecords = objDal.FetchConsoleLoginStatusDetails(username, Base64Decode(password), channelType);
+
+                    if (dtRecords != null && dtRecords.Rows.Count > 0)
+                    {
+                        String result = Convert.ToString(dtRecords.Rows[0]["RESULT"]);
+
+                        if (result == "PASSWORD_IS_CORRECT")
+                        {
+                            objRcrdApp_Login_Response.IsSuccess = true;
+                            objRcrdApp_Login_Response.ErrorMessage = result;
+
+                            //1.Save Login Status Details in Db
+                            objLoginStatus.AgentCode = username;
+                            objLoginStatus.AgentToken = Guid.NewGuid().ToString().Replace("-", "");
+                            objLoginStatus.TokenExpiryDt = DateTime.Now.AddDays(1);
+                            objLoginStatus.isLoggedIn = true;
+
+                            objRcrdApp_Login_Response.LoginStatus = objLoginStatus;
+
+                            objDal.SaveLoginStatusDetails(objLoginStatus);
+                        }
+                        else if (result == "INVALID_PASSWORD")
+                        {
+                            objRcrdApp_Login_Response.IsSuccess = false;
+                            objRcrdApp_Login_Response.ErrorMessage = result;
+                        }
+                        else if (result == "INVALID_AGENT_CODE")
+                        {
+                            objRcrdApp_Login_Response.IsSuccess = false;
+                            objRcrdApp_Login_Response.ErrorMessage = result;
+                        }
+                    }
+                    else
+                    {
+                        objRcrdApp_Login_Response.IsSuccess = false;
+                        objRcrdApp_Login_Response.ErrorMessage = "NO_DATA_ROW";
+                    }
+                }
+                else
+                {
+                    objRcrdApp_Login_Response.IsSuccess = false;
+                    objRcrdApp_Login_Response.ErrorMessage = "CAPTCHA_DID_NOT_MATCH";
+                }
+            }
+            catch (Exception ex)
+            {
+                objRcrdApp_Login_Response.IsSuccess = false;
+                objRcrdApp_Login_Response.ErrorMessage = ex.Message;
+
+                objDal.SaveExceptionLog("Username", username, "BAL.ConsoleLogin", 1, ex.ToString(), "API_GRP_PLVC", String.Empty);
+            }
+
+            return objRcrdApp_Login_Response;
+        }
+
+        public static string Base64Decode(string base64EncodedData)
+        {
+            var base64EncodedBytes = System.Convert.FromBase64String(base64EncodedData);
+            return System.Text.Encoding.UTF8.GetString(base64EncodedBytes);
+        }
+
         #endregion
+
+        #region Application RequestResponse Log
+
+        internal string GetJsonString(HttpResponseMessage ObjHttpResponseMesg)
+        {
+            string jsonString = string.Empty;
+            try
+            {
+                jsonString = ObjHttpResponseMesg.Content.ReadAsStringAsync().Result;
+            }
+            catch (Exception ex)
+            {
+            }
+            return jsonString;
+        }
+
+        internal string GetJsonRequestString(object objectValue)
+        {
+            string jsonString = string.Empty;
+            try
+            {
+                jsonString = JsonConvert.SerializeObject(objectValue);
+            }
+            catch (Exception ex)
+            {
+            }
+            return jsonString;
+        }
+
+        public void SaveRequestResponseLog(ref RequestResponseLog requestResponseLog)
+        {
+            try
+            {
+                objDal.SaveRequestResponseLog(ref requestResponseLog);
+            }
+            catch (Exception ex)
+            {
+                objDal.SaveExceptionLog("LeadID", Convert.ToString(requestResponseLog.LeadId), "BAL.SaveRequestResponseLog", 1, ex.ToString(), "API_GRP_PLVC", requestResponseLog.UserId);
+            }
+        }
+
+        #endregion
+
     }
 }

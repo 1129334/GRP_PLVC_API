@@ -19,6 +19,10 @@ namespace GroupPLVCAPI.Models
 
         [DataMember]
         [Required]
+        public int QuestionID { get; set; }
+
+        [DataMember]
+        [Required]
         public string Container { get; set; }
         [DataMember]
         [Required]
@@ -66,6 +70,6 @@ namespace GroupPLVCAPI.Models
 
         [DataMember]
         [Required]
-        public string CreatedBy { get; set; }        
+        public string CreatedBy { get; set; }
     }
 }

@@ -10,7 +10,7 @@ namespace GroupPLVCAPI.Models
         public string errorcode { get; set; }
         public string errordescription { get; set; }
         public string blobURL { get; set; }
-        public string FileBase64String { get; set; }
+        public List<QuestionVideoMapping> lstQuestionVideoMapping { get; set; }
         public List<Error> ErrorList { get; set; }
     }
 }

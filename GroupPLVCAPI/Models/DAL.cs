@@ -79,6 +79,8 @@ namespace GroupPLVCAPI.Models
                 cmd.Parameters.Add(new SqlParameter("@LeadID", blobDetailsRequest.LeadID));
                 cmd.Parameters.Add(new SqlParameter("@DataKey", blobDetailsRequest.DataKey));
 
+                cmd.Parameters.Add(new SqlParameter("@QuestionID", blobDetailsRequest.QuestionID));
+
                 cmd.Parameters.Add(new SqlParameter("@Container", blobDetailsRequest.Container));
                 cmd.Parameters.Add(new SqlParameter("@Subfolder", blobDetailsRequest.Subfolder));
 
@@ -422,6 +424,193 @@ namespace GroupPLVCAPI.Models
 
             return dt;
         }
-        
+
+        public DataTable SaveLoginStatusDetails(LoginStatus loginStatus)
+        {
+            DataTable dtresult = new DataTable();
+
+            SqlConnection sqlconn = new SqlConnection(conn);
+            SqlCommand cmd = new SqlCommand();
+            SqlDataAdapter da = new SqlDataAdapter();
+            DataTable dt = new DataTable();
+
+            try
+            {
+                cmd = new SqlCommand("[usp_GRP_PLVC_INSERT_LOGIN_STATUS]", sqlconn);
+
+                cmd.Parameters.Add(new SqlParameter("@AgentCode", loginStatus.AgentCode));
+                cmd.Parameters.Add(new SqlParameter("@isLoggedIn", loginStatus.isLoggedIn));
+                cmd.Parameters.Add(new SqlParameter("@AgentToken", loginStatus.AgentToken));
+
+                cmd.CommandType = CommandType.StoredProcedure;
+
+                da.SelectCommand = cmd;
+                da.Fill(dt);
+                cmd.Dispose();
+            }
+            catch (Exception ex)
+            {
+                SaveExceptionLog("loginStatus", Convert.ToString(loginStatus.isLoggedIn), "DAL.SaveLoginStatusDetails", 1, ex.ToString(), "API_GRP_PLVC", loginStatus.AgentCode);
+            }
+
+            return dt;
+        }
+
+        public DataTable FetchLoginStatusDetails(string agentToken)
+        {
+            DataTable dtresult = new DataTable();
+
+            SqlConnection sqlconn = new SqlConnection(conn);
+            SqlCommand cmd = new SqlCommand();
+            SqlDataAdapter da = new SqlDataAdapter();
+            DataTable dt = new DataTable();
+
+            try
+            {
+                cmd = new SqlCommand("[usp_GRP_PLVC_FETCH_LOGIN_STATUS]", sqlconn);
+
+                cmd.Parameters.Add(new SqlParameter("@AgentToken", agentToken));                
+
+                cmd.CommandType = CommandType.StoredProcedure;
+
+                da.SelectCommand = cmd;
+                da.Fill(dt);
+                cmd.Dispose();
+            }
+            catch (Exception ex)
+            {
+                SaveExceptionLog("AgentToken", String.Empty, "DAL.FetchLoginStatusDetails", 1, ex.ToString(), "API_GRP_PLVC", agentToken);
+            }
+
+            return dt;
+        }
+
+        internal void SaveRequestResponseLog(ref RequestResponseLog requestResponseLog)
+        {
+            DataTable dtresult = new DataTable();
+
+            SqlConnection sqlconn = new SqlConnection(conn);
+            SqlCommand cmd = new SqlCommand();
+            SqlDataAdapter da = new SqlDataAdapter();
+            DataTable dt = new DataTable();
+
+            try
+            {
+                cmd = new SqlCommand("[USP_GRP_PLVC_INSERTUPDATEREQUESTRESPONSE]", sqlconn);
+                SqlParameter sqlParameter = new SqlParameter("@SRNO", requestResponseLog.SrNo);
+                sqlParameter.Direction = ParameterDirection.Output;
+                cmd.Parameters.Add(sqlParameter);
+                cmd.Parameters.Add(new SqlParameter("@LEADID", requestResponseLog.LeadId));
+                cmd.Parameters.Add(new SqlParameter("@DATAKEY", requestResponseLog.DataKey));
+                cmd.Parameters.Add(new SqlParameter("@DATAVALUE", requestResponseLog.DataValue));
+                cmd.Parameters.Add(new SqlParameter("@REQUEST", requestResponseLog.Request));
+                cmd.Parameters.Add(new SqlParameter("@RESPONSE", requestResponseLog.Response));
+                cmd.Parameters.Add(new SqlParameter("@USERID", requestResponseLog.UserId));
+                cmd.CommandType = CommandType.StoredProcedure;
+                sqlconn.Open();
+                cmd.ExecuteNonQuery();
+                requestResponseLog.SrNo = Convert.ToInt32(sqlParameter.Value);
+                cmd.Dispose();
+            }
+            catch (Exception ex)
+            {
+                SaveExceptionLog("LeadId", Convert.ToString(requestResponseLog.LeadId), "DAL.SaveRequestResponseLog", 1, ex.ToString(), "API_GRP_PLVC", requestResponseLog.UserId);
+            }
+            finally
+            {
+                sqlconn.Close();
+            }
+        }
+
+
+        public DataTable FetchConsoleLoginStatusDetails(string agentCode, string password, string channelType)
+        {
+            DataTable dtresult = new DataTable();
+
+            SqlConnection sqlconn = new SqlConnection(conn);
+            SqlCommand cmd = new SqlCommand();
+            SqlDataAdapter da = new SqlDataAdapter();
+            DataTable dt = new DataTable();
+
+            try
+            {
+                cmd = new SqlCommand("[usp_GRP_PLVC_FETCH_CONSOLE_LOGIN_STATUS]", sqlconn);
+
+                cmd.Parameters.Add(new SqlParameter("@AgentCode", agentCode));
+                cmd.Parameters.Add(new SqlParameter("@Password", password));
+                cmd.Parameters.Add(new SqlParameter("@ChannelType", channelType));
+
+                cmd.CommandType = CommandType.StoredProcedure;
+
+                da.SelectCommand = cmd;
+                da.Fill(dt);
+                cmd.Dispose();
+            }
+            catch (Exception ex)
+            {
+                SaveExceptionLog("AgentCode", String.Empty, "DAL.FetchConsoleLoginStatusDetails", 1, ex.ToString(), "API_GRP_PLVC", agentCode);
+            }
+
+            return dt;
+        }
+
+        public DataTable FetchBlinkDetetcionStatusDetails(int leadID)
+        {
+            DataTable dtresult = new DataTable();
+
+            SqlConnection sqlconn = new SqlConnection(conn);
+            SqlCommand cmd = new SqlCommand();
+            SqlDataAdapter da = new SqlDataAdapter();
+            DataTable dt = new DataTable();
+
+            try
+            {
+                cmd = new SqlCommand("[usp_GRP_PLVC_FETCH_BLINK_DETECTION_STATUS]", sqlconn);
+
+                cmd.Parameters.Add(new SqlParameter("@LeadID", leadID));                
+
+                cmd.CommandType = CommandType.StoredProcedure;
+
+                da.SelectCommand = cmd;
+                da.Fill(dt);
+                cmd.Dispose();
+            }
+            catch (Exception ex)
+            {
+                SaveExceptionLog("leadID", Convert.ToString(leadID), "DAL.FetchBlinkDetetcionStatusDetails", 1, ex.ToString(), "API_GRP_PLVC", String.Empty);
+            }
+
+            return dt;
+        }
+
+        public DataTable SaveBlinkDetectionStatus(int leadID, Boolean status, string message)
+        {
+            DataTable dtresult = new DataTable();
+
+            SqlConnection sqlconn = new SqlConnection(conn);
+            SqlCommand cmd = new SqlCommand();
+            SqlDataAdapter da = new SqlDataAdapter();
+            DataTable dt = new DataTable();
+
+            try
+            {
+                cmd = new SqlCommand("[usp_GRP_PLVC_INSERT_BLINK_DETECTION_STATUS]", sqlconn);
+
+                cmd.Parameters.Add(new SqlParameter("@LeadID", leadID));
+                cmd.Parameters.Add(new SqlParameter("@BlinkDetect_Status", status));
+                cmd.Parameters.Add(new SqlParameter("@BlinkDetect_Message", message));
+
+                cmd.CommandType = CommandType.StoredProcedure;
+                da.SelectCommand = cmd;
+                da.Fill(dt);
+                cmd.Dispose();
+            }
+            catch (Exception ex)
+            {
+                SaveExceptionLog("LeadID", Convert.ToString(leadID), "DAL.SaveLeadDetails", 1, ex.ToString(), "API_GRP_PLVC", String.Empty);
+            }
+
+            return dt;
+        }
     }
 }
